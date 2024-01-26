@@ -29,17 +29,18 @@ int nBCsPerOrbit = 3564;
 
 namespace o2::aod
 {
-  namespace trigvertex {
-    DECLARE_SOA_COLUMN(TrigVetexCounterFDD, tvcfdd, uint64_t);
-    DECLARE_SOA_COLUMN(TrigVetexCounterFT0, tvcft0, uint64_t);
-    //DECLARE_SOA_COLUMN(RunNumber, runnumber, uint64_t);
-  } //namespace trigvertex
+namespace trigvertex
+{
+DECLARE_SOA_COLUMN(TrigVetexCounterFDD, tvcfdd, uint64_t);
+DECLARE_SOA_COLUMN(TrigVetexCounterFT0, tvcft0, uint64_t);
+// DECLARE_SOA_COLUMN(RunNumber, runnumber, uint64_t);
+} // namespace trigvertex
 
-  DECLARE_SOA_TABLE(TrigVertexInfo, "AOD", "TrigVertexInfo",
-                    trigvertex::TrigVetexCounterFDD,
-                    trigvertex::TrigVetexCounterFT0); //,
-                    //trigvertex::RunNumber);
-} //namespace o2::aod
+DECLARE_SOA_TABLE(TrigVertexInfo, "AOD", "TrigVertexInfo",
+                  trigvertex::TrigVetexCounterFDD,
+                  trigvertex::TrigVetexCounterFT0); //,
+                                                    // trigvertex::RunNumber);
+} // namespace o2::aod
 
 struct myExampleTask {
   Produces<o2::aod::TrigVertexInfo> rowtrigvertex;
@@ -61,9 +62,10 @@ struct myExampleTask {
     int NTrigVertexFDD = 0;
     int NTrigVertexFT0 = 0;
 
-    for( auto const& fdd: fdds){
+    for (auto const& fdd : fdds) {
       auto bc = fdd.bc_as<BCsWithTimestamps>();
-      if(!bc.timestamp()) continue;
+      if (!bc.timestamp())
+        continue;
 
       Long64_t globalBC = bc.globalBC();
       int localBC = globalBC % nBCsPerOrbit;
@@ -71,15 +73,16 @@ struct myExampleTask {
       std::bitset<8> fddTriggers = fdd.triggerMask();
       bool vertex = fddTriggers[o2::fdd::Triggers::bitVertex];
 
-      if(vertex){
+      if (vertex) {
         histos.fill(HIST("BCFDD"), localBC);
         NTrigVertexFDD++;
       } // vertex true
-    } // loop over FDD events
+    }   // loop over FDD events
 
-    for(auto const& ft0 : ft0s){
+    for (auto const& ft0 : ft0s) {
       auto bc = ft0.bc_as<BCsWithTimestamps>();
-      if(!bc.timestamp()) continue;
+      if (!bc.timestamp())
+        continue;
 
       Long64_t globalBC = bc.globalBC();
       int localBC = globalBC % nBCsPerOrbit;
@@ -87,15 +90,15 @@ struct myExampleTask {
       std::bitset<8> fT0Triggers = ft0.triggerMask();
       bool vertex = fT0Triggers[o2::fdd::Triggers::bitVertex];
 
-      if(vertex){
+      if (vertex) {
         histos.fill(HIST("BCFT0"), localBC);
         NTrigVertexFT0++;
       } // vertex true
-    } // loop over FT0 events
-    rowtrigvertex(NTrigVertexFDD,NTrigVertexFT0);
+    }   // loop over FT0 events
+    rowtrigvertex(NTrigVertexFDD, NTrigVertexFT0);
     NTrigVertexFDD = 0;
     NTrigVertexFDD = 0;
-  } //end processF
+  } // end processF
 };
 
 WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
