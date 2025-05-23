@@ -72,3 +72,4 @@ WorkflowSpec defineDataProcessing(ConfigContext const& cfgc)
     adaptAnalysisTask<firstcorrelations>(cfgc),
   };
 }
+ 
