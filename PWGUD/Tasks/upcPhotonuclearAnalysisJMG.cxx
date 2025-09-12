@@ -181,9 +181,10 @@ struct UpcPhotonuclearAnalysisJMG {
   OutputObj<CorrelationContainer> sameGapSideA{"sameEventGapSideA"};
   OutputObj<CorrelationContainer> mixedGapSideA{"mixedEventGapSideA"};
   OutputObj<CorrelationContainer> sameGapSideC{"sameEventGapSideC"};
-  OutputObj<CorrelationContainer> mixedGapSideC{"mixedEventGapSideC"};*/
+  OutputObj<CorrelationContainer> mixedGapSideC{"mixedEventGapSideC"};
+  * /
 
-  UPCPairCuts mPairCuts;
+    UPCPairCuts mPairCuts;
   bool doPairCuts = false;
 
   void init(InitContext const&)
