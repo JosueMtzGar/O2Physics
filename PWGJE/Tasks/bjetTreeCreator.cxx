@@ -15,30 +15,39 @@
 ///
 /// \author Hadi Hassan <hadi.hassan@cern.ch>, University of Jyväskylä
 
+#include "PWGJE/Core/JetDerivedDataUtilities.h"
+#include "PWGJE/Core/JetTaggingUtilities.h"
+#include "PWGJE/Core/JetUtilities.h"
+#include "PWGJE/DataModel/Jet.h"
+#include "PWGJE/DataModel/JetReducedData.h"
+#include "PWGJE/DataModel/JetTagging.h"
+
+#include "Common/Core/RecoDecay.h"
+#include "Common/DataModel/TrackSelectionTables.h"
+
+#include "Framework/ASoA.h"
+#include "Framework/AnalysisDataModel.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/HistogramRegistry.h"
+#include <CommonConstants/MathConstants.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/Configurable.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/runDataProcessing.h>
+
+#include <TH1.h>
+
 #include <algorithm>
+#include <array>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
+#include <ctime>
 #include <string>
 #include <unordered_map>
 #include <vector>
-
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/ASoA.h"
-#include "Framework/HistogramRegistry.h"
-#include "Framework/runDataProcessing.h"
-#include "PWGJE/Core/FastJetUtilities.h"
-#include "PWGJE/Core/JetUtilities.h"
-#include "PWGJE/Core/JetFinder.h"
-#include "PWGJE/Core/JetDerivedDataUtilities.h"
-#include "PWGJE/Core/JetTaggingUtilities.h"
-#include "PWGJE/DataModel/Jet.h"
-#include "PWGJE/DataModel/JetTagging.h"
-
-#include "Common/Core/trackUtilities.h"
-#include "Common/Core/TrackSelection.h"
-#include "Common/Core/TrackSelectionDefaults.h"
-#include "Common/DataModel/EventSelection.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "Common/Core/RecoDecay.h"
 
 using namespace o2;
 using namespace o2::framework;
@@ -232,6 +241,8 @@ struct BJetTreeCreator {
 
   Configurable<float> vtxRes{"vtxRes", 0.01, "Vertex position resolution (cluster size) for GNN vertex predictions (cm)"};
 
+  Configurable<int> trainingDatasetRatioParam{"trainingDatasetRatioParam", 0, "Parameter for splitting training/evaluation datasets by collisionId"};
+
   std::vector<int> eventSelectionBits;
 
   std::vector<double> jetRadiiValues;
@@ -316,9 +327,9 @@ struct BJetTreeCreator {
       registry.add("h_trk_phi", "trk_phi;#it{#phi};Entries", {HistType::kTH1F, {{200, 0., o2::constants::math::TwoPI}}});
       registry.add("h_trk_charge", "trk_charge;#it{q};Entries", {HistType::kTH1F, {{3, -1.5, 1.5}}});
       registry.add("h_trk_dcaxy", "trk_dcaxy;#it{DCA}_{xy} (cm);Entries", {HistType::kTH1F, {{200, -0.1, 0.1}}});
-      registry.add("h_trk_dcaxyz", "trk_dcaxyz;#it{DCA}_{xyz} (cm);Entries", {HistType::kTH1F, {{200, -0.1, 0.1}}});
+      registry.add("h_trk_dcaz", "trk_dcaxyz;#it{DCA}_{z} (cm);Entries", {HistType::kTH1F, {{200, -0.1, 0.1}}});
       registry.add("h_trk_sigmadcaxy", "trk_sigmadcaxy;#it{#sigma}_{#it{DCA}_{xy}} (cm);Entries", {HistType::kTH1F, {{200, 0., 0.1}}});
-      registry.add("h_trk_sigmadcaxyz", "trk_sigmadcaxyz;#it{#sigma}_{#it{DCA}_{xyz}} (cm);Entries", {HistType::kTH1F, {{200, 0., 0.1}}});
+      registry.add("h_trk_sigmadcaz", "trk_sigmadcaxyz;#it{#sigma}_{#it{DCA}_{z}} (cm);Entries", {HistType::kTH1F, {{200, 0., 0.1}}});
       registry.add("h_trk_itsncls", "trk_itsncls;ITS NCls;Entries", {HistType::kTH1F, {{10, 0., 10.}}});
       registry.add("h_trk_tpcncls", "trk_tpcncls;TPC NCls (Found);Entries", {HistType::kTH1F, {{200, 0., 200.}}});
       registry.add("h_trk_tpcncrs", "trk_tpcncrs;TPC NCrossedRows;Entries", {HistType::kTH1F, {{200, 0., 200.}}});
@@ -479,7 +490,7 @@ struct BJetTreeCreator {
 
       trkIdx++;
 
-      if (constituent.pt() < trackPtMin) {
+      if (constituent.pt() < trackPtMin || !jettaggingutilities::trackAcceptanceWithDca(constituent, maxIPxy, maxIPz)) {
         continue;
       }
 
@@ -518,9 +529,9 @@ struct BJetTreeCreator {
         registry.fill(HIST("h_trk_phi"), origConstit.phi(), eventweight);
         registry.fill(HIST("h_trk_charge"), constituent.sign(), eventweight);
         registry.fill(HIST("h_trk_dcaxy"), std::abs(constituent.dcaXY()) * sign, eventweight);
-        registry.fill(HIST("h_trk_dcaxyz"), std::abs(constituent.dcaXYZ()) * sign, eventweight);
+        registry.fill(HIST("h_trk_dcaz"), std::abs(constituent.dcaZ()) * sign, eventweight);
         registry.fill(HIST("h_trk_sigmadcaxy"), constituent.sigmadcaXY(), eventweight);
-        registry.fill(HIST("h_trk_sigmadcaxyz"), constituent.sigmadcaXYZ(), eventweight);
+        registry.fill(HIST("h_trk_sigmadcaz"), constituent.sigmadcaZ(), eventweight);
         registry.fill(HIST("h_trk_itsncls"), origConstit.itsNCls(), eventweight);
         registry.fill(HIST("h_trk_tpcncls"), origConstit.tpcNClsFound(), eventweight);
         registry.fill(HIST("h_trk_tpcncrs"), origConstit.tpcNClsCrossedRows(), eventweight);
@@ -698,7 +709,7 @@ struct BJetTreeCreator {
   }
   PROCESS_SWITCH(BJetTreeCreator, processMCJets, "jet information in MC", false);
 
-  using MCDJetTableNoSV = soa::Filtered<soa::Join<aod::ChargedMCDetectorLevelJets, aod::ChargedMCDetectorLevelJetConstituents, aod::ChargedMCDetectorLevelJetsMatchedToChargedMCParticleLevelJets, aod::ChargedMCDetectorLevelJetEventWeights>>;
+  using MCDJetTableNoSV = soa::Filtered<soa::Join<aod::ChargedMCDetectorLevelJets, aod::ChargedMCDetectorLevelJetConstituents, aod::ChargedMCDetectorLevelJetsMatchedToChargedMCParticleLevelJets, aod::ChargedMCDetectorLevelJetFlavourDef, aod::ChargedMCDetectorLevelJetEventWeights>>;
   using JetParticleswID = soa::Join<aod::JetParticles, aod::JMcParticlePIs>;
 
   void processMCJetsForGNN(FilteredCollisionMCD::iterator const& collision, aod::JMcCollisions const&, MCDJetTableNoSV const& MCDjets, MCPJetTable const& MCPjets, JetTracksMCDwID const& allTracks, JetParticleswID const& MCParticles, OriginalTracks const& origTracks, aod::McParticles const& origParticles)
@@ -707,7 +718,12 @@ struct BJetTreeCreator {
       return;
     }
 
-    registry.fill(HIST("h_vertexZ"), collision.posZ());
+    // Uses only collisionId % trainingDatasetRaioParam == 0 for training dataset
+    if (trainingDatasetRatioParam && collision.collisionId() % trainingDatasetRatioParam != 0) {
+      return;
+    }
+
+    registry.fill(HIST("h_vertexZ"), collision.posZ(), collision.weight());
 
     auto const mcParticlesPerColl = MCParticles.sliceBy(mcParticlesPerCollision, collision.mcCollisionId());
     auto const mcPJetsPerColl = MCPjets.sliceBy(mcpJetsPerCollision, collision.mcCollisionId());
@@ -729,15 +745,7 @@ struct BJetTreeCreator {
       std::vector<int> indicesTracks;
       std::vector<int> indicesSVs;
 
-      int16_t jetFlavor = 0;
-
-      for (const auto& mcpjet : analysisJet.template matchedJetGeo_as<MCPJetTable>()) {
-        if (useQuarkDef) {
-          jetFlavor = jettaggingutilities::getJetFlavor(mcpjet, mcParticlesPerColl);
-        } else {
-          jetFlavor = jettaggingutilities::getJetFlavorHadron(mcpjet, mcParticlesPerColl);
-        }
-      }
+      int16_t jetFlavor = analysisJet.origin();
 
       if ((jetFlavor != JetTaggingSpecies::charm && jetFlavor != JetTaggingSpecies::beauty) && (static_cast<double>(std::rand()) / RAND_MAX < getReductionFactor(analysisJet.pt()))) {
         continue;
@@ -751,7 +759,7 @@ struct BJetTreeCreator {
       analyzeJetTrackInfoForGNN(collision, analysisJet, allTracks, origTracks, indicesTracks, jetFlavor, eventWeight, &trkLabels);
 
       registry.fill(HIST("h2_jetMass_jetpT"), analysisJet.pt(), analysisJet.mass(), eventWeight);
-      registry.fill(HIST("h2_nTracks_jetpT"), analysisJet.pt(), indicesTracks.size());
+      registry.fill(HIST("h2_nTracks_jetpT"), analysisJet.pt(), indicesTracks.size(), eventWeight);
 
       //+jet
       registry.fill(HIST("h_jet_pt"), analysisJet.pt());

@@ -17,37 +17,31 @@
 #ifndef PWGJE_CORE_JETFINDINGUTILITIES_H_
 #define PWGJE_CORE_JETFINDINGUTILITIES_H_
 
-#include <array>
-#include <vector>
-#include <string>
-#include <cmath>
-#include <memory>
-#include <TRandom3.h>
-
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoA.h"
-#include "Framework/O2DatabasePDGPlugin.h"
-#include "Framework/HistogramRegistry.h"
-
-#include "Framework/Logger.h"
-#include "Common/Core/TrackSelection.h"
-#include "Common/Core/TrackSelectionDefaults.h"
-#include "Common/DataModel/EventSelection.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "PWGJE/DataModel/EMCALClusters.h"
-
-#include "PWGHF/DataModel/CandidateReconstructionTables.h"
-#include "PWGHF/DataModel/CandidateSelectionTables.h"
-
-// #include "PWGJE/Core/JetBkgSubUtils.h"
 #include "PWGJE/Core/FastJetUtilities.h"
+#include "PWGJE/Core/JetCandidateUtilities.h"
 #include "PWGJE/Core/JetDerivedDataUtilities.h"
 #include "PWGJE/Core/JetFinder.h"
 #include "PWGJE/DataModel/Jet.h"
+#include "PWGJE/DataModel/JetReducedData.h"
 
-#include "PWGJE/Core/JetCandidateUtilities.h"
-#include "PWGJE/Core/JetHFUtilities.h"
+#include <CommonConstants/PhysicsConstants.h>
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/O2DatabasePDGPlugin.h>
+
+#include <THn.h>
+#include <TRandom3.h>
+
+#include <fastjet/ClusterSequenceArea.hh>
+#include <fastjet/PseudoJet.hh>
+
+#include <cmath>
+#include <memory>
+#include <string>
+#include <type_traits>
+#include <vector>
+
+#include <math.h>
 
 namespace jetfindingutilities
 {
@@ -98,7 +92,7 @@ constexpr bool isEMCALClusterTable()
  */
 
 template <typename T, typename U>
-void analyseTracks(std::vector<fastjet::PseudoJet>& inputParticles, T const& tracks, int trackSelection, double trackingEfficinecy, const U* candidate = nullptr)
+void analyseTracks(std::vector<fastjet::PseudoJet>& inputParticles, T const& tracks, int trackSelection, bool applyTrackingEfficiency, std::vector<double> trackingEfficiency, std::vector<double> trackingEfficiencyPtBinning, const U* candidate = nullptr)
 {
   for (auto& track : tracks) {
     if (!jetderiveddatautilities::selectTrack(track, trackSelection)) {
@@ -109,10 +103,14 @@ void analyseTracks(std::vector<fastjet::PseudoJet>& inputParticles, T const& tra
         continue;
       }
     }
-    if (trackingEfficinecy < 0.999) { // this code is a bit ugly but it stops us needing to do the random generation unless asked for
-      TRandom3 randomNumber(0);
-      if (randomNumber.Rndm() > trackingEfficinecy) { // Is Rndm ok to use?
-        continue;
+    if (applyTrackingEfficiency) {
+      auto iter = std::upper_bound(trackingEfficiencyPtBinning.begin(), trackingEfficiencyPtBinning.end(), track.pt());
+      if (iter != trackingEfficiencyPtBinning.begin() && iter != trackingEfficiencyPtBinning.end()) {
+        std::size_t index = std::distance(trackingEfficiencyPtBinning.begin(), iter) - 1;
+        TRandom3 randomNumber(0);
+        if (randomNumber.Rndm() > trackingEfficiency[index]) {
+          continue;
+        }
       }
     }
     fastjetutilities::fillTracks(track, inputParticles, track.globalIndex());
@@ -129,7 +127,7 @@ void analyseTracks(std::vector<fastjet::PseudoJet>& inputParticles, T const& tra
  */
 
 template <typename T, typename U>
-void analyseTracksMultipleCandidates(std::vector<fastjet::PseudoJet>& inputParticles, T const& tracks, int trackSelection, double trackingEfficinecy, U const& candidates)
+void analyseTracksMultipleCandidates(std::vector<fastjet::PseudoJet>& inputParticles, T const& tracks, int trackSelection, bool applyTrackingEfficiency, std::vector<double> trackingEfficiency, std::vector<double> trackingEfficiencyPtBinning, U const& candidates)
 {
   for (auto& track : tracks) {
     if (!jetderiveddatautilities::selectTrack(track, trackSelection)) {
@@ -140,10 +138,14 @@ void analyseTracksMultipleCandidates(std::vector<fastjet::PseudoJet>& inputParti
         continue;
       }
     }
-    if (trackingEfficinecy < 0.999) { // this code is a bit ugly but it stops us needing to do the random generation unless asked for
-      TRandom3 randomNumber(0);
-      if (randomNumber.Rndm() > trackingEfficinecy) { // Is Rndm ok to use?
-        continue;
+    if (applyTrackingEfficiency) {
+      auto iter = std::upper_bound(trackingEfficiencyPtBinning.begin(), trackingEfficiencyPtBinning.end(), track.pt());
+      if (iter != trackingEfficiencyPtBinning.begin() && iter != trackingEfficiencyPtBinning.end()) {
+        std::size_t index = std::distance(trackingEfficiencyPtBinning.begin(), iter) - 1;
+        TRandom3 randomNumber(0);
+        if (randomNumber.Rndm() > trackingEfficiency[index]) {
+          continue;
+        }
       }
     }
     fastjetutilities::fillTracks(track, inputParticles, track.globalIndex());
@@ -224,7 +226,7 @@ bool analyseCandidateMC(std::vector<fastjet::PseudoJet>& inputParticles, T const
  * @param v0s V0 candidates
  */
 template <typename T>
-bool analyseV0s(std::vector<fastjet::PseudoJet>& inputParticles, T const& v0s, float v0PtMin, float v0PtMax, float v0YMin, float v0YMax, int v0Index)
+bool analyseV0s(std::vector<fastjet::PseudoJet>& inputParticles, T const& v0s, float v0PtMin, float v0PtMax, float v0YMin, float v0YMax, int v0Index, bool useV0SignalFlags)
 {
   float v0Mass = 0;
   float v0Y = -10.0;
@@ -235,6 +237,9 @@ bool analyseV0s(std::vector<fastjet::PseudoJet>& inputParticles, T const& v0s, f
       v0Mass = v0.m();
       v0Y = v0.y();
     } else {
+      if (useV0SignalFlags && v0.isRejectedCandidate()) {
+        continue;
+      }
       if (v0Index == 0) {
         v0Mass = o2::constants::physics::MassKaonNeutral;
       }

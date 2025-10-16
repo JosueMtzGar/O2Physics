@@ -12,19 +12,49 @@
 /// \file taskCorrelationDplusHadrons.cxx
 /// \brief D+-Hadrons azimuthal correlations analysis task - data-like, MC-reco and MC-Gen analyses
 /// \author Shyam Kumar <shyam.kumar@cern.ch>
+
+#include "PWGHF/Core/DecayChannels.h"
+#include "PWGHF/Core/HfHelper.h"
+#include "PWGHF/Core/SelectorCuts.h"
+#include "PWGHF/DataModel/CandidateReconstructionTables.h"
+#include "PWGHF/DataModel/CandidateSelectionTables.h"
+#include "PWGHF/HFC/DataModel/CorrelationTables.h"
+#include "PWGHF/Utils/utilsAnalysis.h"
+
+#include "Common/CCDB/EventSelectionParams.h"
+#include "Common/Core/RecoDecay.h"
+#include "Common/DataModel/EventSelection.h"
+#include "Common/DataModel/Multiplicity.h"
+#include "Common/DataModel/TrackSelectionTables.h"
+
+#include <CCDB/BasicCCDBManager.h>
+#include <CommonConstants/MathConstants.h>
+#include <CommonConstants/PhysicsConstants.h>
+#include <Framework/ASoA.h>
+#include <Framework/AnalysisDataModel.h>
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/AnalysisTask.h>
+#include <Framework/Configurable.h>
+#include <Framework/HistogramRegistry.h>
+#include <Framework/HistogramSpec.h>
+#include <Framework/InitContext.h>
+#include <Framework/Logger.h>
+#include <Framework/OutputObjHeader.h>
+#include <Framework/StepTHn.h>
+#include <Framework/runDataProcessing.h>
+
+#include <TH1.h>
+#include <TH2.h>
+#include <THnSparse.h>
+#include <TString.h>
+
+#include <chrono>
+#include <cstddef>
+#include <cstdint>
+#include <cstdlib>
 #include <memory> // std::shared_ptr
 #include <string>
 #include <vector>
-#include "CCDB/BasicCCDBManager.h"
-#include "Framework/AnalysisTask.h"
-#include "Framework/HistogramRegistry.h"
-#include "Framework/runDataProcessing.h"
-
-#include "PWGHF/Core/HfHelper.h"
-#include "PWGHF/DataModel/CandidateReconstructionTables.h"
-#include "PWGHF/DataModel/CandidateSelectionTables.h"
-#include "PWGHF/Utils/utilsAnalysis.h"
-#include "PWGHF/HFC/DataModel/CorrelationTables.h"
 
 using namespace o2;
 using namespace o2::constants::math;
@@ -49,21 +79,21 @@ const TString stringMCGenDFd = "MC gen, non-prompt D+;";
 
 const int npTBinsCorrelations = 8;
 const double pTBinsCorrelations[npTBinsCorrelations + 1] = {0., 2., 4., 6., 8., 12., 16., 24., 99.};
-auto ptBinsCorrelationsVec = std::vector<double>{pTBinsCorrelations, pTBinsCorrelations + npTBinsCorrelations + 1};
+const auto ptBinsCorrelationsVec = std::vector<double>{pTBinsCorrelations, pTBinsCorrelations + npTBinsCorrelations + 1};
 const double signalRegionInnerDefault[npTBinsCorrelations] = {1.8490, 1.8490, 1.8490, 1.8490, 1.8490, 1.8490, 1.8490, 1.8490};
 const double signalRegionOuterDefault[npTBinsCorrelations] = {1.8890, 1.8890, 1.8890, 1.8890, 1.8890, 1.8890, 1.8890, 1.8890};
 const double sidebandLeftOuterDefault[npTBinsCorrelations] = {1.7690, 1.7690, 1.7690, 1.7690, 1.7690, 1.7690, 1.7690, 1.7690};
 const double sidebandLeftInnerDefault[npTBinsCorrelations] = {1.8250, 1.8250, 1.8250, 1.8250, 1.8250, 1.8250, 1.8250, 1.8250};
 const double sidebandRightInnerDefault[npTBinsCorrelations] = {1.9130, 1.9130, 1.9130, 1.9130, 1.9130, 1.9130, 1.9130, 1.9130};
 const double sidebandRightOuterDefault[npTBinsCorrelations] = {1.9690, 1.9690, 1.9690, 1.9690, 1.9690, 1.9690, 1.9690, 1.9690};
-auto signalRegionInnerVec = std::vector<double>{signalRegionInnerDefault, signalRegionInnerDefault + npTBinsCorrelations};
-auto signalRegionOuterVec = std::vector<double>{signalRegionOuterDefault, signalRegionOuterDefault + npTBinsCorrelations};
-auto sidebandLeftInnerVec = std::vector<double>{sidebandLeftInnerDefault, sidebandLeftInnerDefault + npTBinsCorrelations};
-auto sidebandLeftOuterVec = std::vector<double>{sidebandLeftOuterDefault, sidebandLeftOuterDefault + npTBinsCorrelations};
-auto sidebandRightInnerVec = std::vector<double>{sidebandRightInnerDefault, sidebandRightInnerDefault + npTBinsCorrelations};
-auto sidebandRightOuterVec = std::vector<double>{sidebandRightOuterDefault, sidebandRightOuterDefault + npTBinsCorrelations};
+const auto signalRegionInnerVec = std::vector<double>{signalRegionInnerDefault, signalRegionInnerDefault + npTBinsCorrelations};
+const auto signalRegionOuterVec = std::vector<double>{signalRegionOuterDefault, signalRegionOuterDefault + npTBinsCorrelations};
+const auto sidebandLeftInnerVec = std::vector<double>{sidebandLeftInnerDefault, sidebandLeftInnerDefault + npTBinsCorrelations};
+const auto sidebandLeftOuterVec = std::vector<double>{sidebandLeftOuterDefault, sidebandLeftOuterDefault + npTBinsCorrelations};
+const auto sidebandRightInnerVec = std::vector<double>{sidebandRightInnerDefault, sidebandRightInnerDefault + npTBinsCorrelations};
+const auto sidebandRightOuterVec = std::vector<double>{sidebandRightOuterDefault, sidebandRightOuterDefault + npTBinsCorrelations};
 const int npTBinsEfficiency = o2::analysis::hf_cuts_dplus_to_pi_k_pi::NBinsPt;
-std::vector<double> efficiencyDmeson(npTBinsEfficiency + 1);
+const std::vector<double> efficiencyDmeson(npTBinsEfficiency + 1);
 
 /// Dplus-Hadron correlation pair filling task, from pair tables - for real data and data-like analysis (i.e. reco-level w/o matching request via MC truth)
 struct HfTaskCorrelationDplusHadrons {
@@ -77,7 +107,8 @@ struct HfTaskCorrelationDplusHadrons {
   Configurable<int> selectionFlagDplus{"selectionFlagDplus", 7, "Selection Flag for D+"}; // 7 corresponds to topo+PID cuts
   Configurable<bool> selNoSameBunchPileUpColl{"selNoSameBunchPileUpColl", true, "Flag for rejecting the collisions associated with the same bunch crossing"};
   Configurable<std::vector<int>> classMl{"classMl", {0, 1, 2}, "Indexes of ML scores to be stored. Three indexes max."};
-  Configurable<std::vector<double>> mlScorePromptOrNonPrompt{"mlScorePromptOrNonPrompt", {0.5, 0.5, 0.5, 0.5}, "Machine learning scores for prompt or Feed-down"};
+  Configurable<std::vector<double>> mlScorePromptOrNonPromptMin{"mlScorePromptOrNonPromptMin", {0.5, 0.5, 0.5, 0.5}, "Minimum Machine learning scores for prompt or Feed-down"};
+  Configurable<std::vector<double>> mlScorePromptOrNonPromptMax{"mlScorePromptOrNonPromptMax", {1.0, 1.0, 1.0, 1.0}, "Maximum Machine learning scores for prompt or Feed-down"};
   Configurable<std::vector<double>> mlScoreBkg{"mlScoreBkg", {0.5, 0.5, 0.5, 0.5}, "Machine learning scores for bkg"};
   // pT ranges for correlation plots: the default values are those embedded in hf_cuts_dplus_to_pi_k_pi (i.e. the mass pT bins), but can be redefined via json files
   Configurable<std::vector<double>> binsPtCorrelations{"binsPtCorrelations", std::vector<double>{ptBinsCorrelationsVec}, "pT bin limits for correlation plots"};
@@ -155,13 +186,13 @@ struct HfTaskCorrelationDplusHadrons {
     AxisSpec axisMassD = {binsMassD, "inv. mass (#pi^{+}K^{-}#pi^{+}) (GeV/#it{c}^{2})"};
     AxisSpec axisPtCorr = {(std::vector<double>)binsPtCorrelations, "#it{p}_{T}^{D} (GeV/#it{c})"};
     AxisSpec axisPtD = {(std::vector<double>)binsPtEfficiencyD, "#it{p}_{T}^{D} (GeV/#it{c})"};
-    AxisSpec axisMultFT0M = {binsMultFT0M, "MultiplicityFT0M"};
+    AxisSpec const axisMultFT0M = {binsMultFT0M, "MultiplicityFT0M"};
     AxisSpec axisDeltaEta = {binsEta, "#it{#eta}^{Hadron}-#it{#eta}^{D}"};
     AxisSpec axisDeltaPhi = {binsPhi, "#it{#varphi}^{Hadron}-#it{#varphi}^{D} (rad)"};
     AxisSpec axisPtHadron = {(std::vector<double>)binsPtHadron, "#it{p}_{T}^{Hadron} (GeV/#it{c})"};
     AxisSpec axisPoolBin = {binsPoolBin, "poolBin"};
     AxisSpec axisDplusPrompt = {2, -0.5, 1.5, "Prompt D+"};
-    AxisSpec axisBdtScore = {binsBdtScore, "Bdt score"};
+    AxisSpec const axisBdtScore = {binsBdtScore, "Bdt score"};
 
     // Histograms for data analysis
     registry.add("hBdtScorePrompt", "D+ BDT prompt score", {HistType::kTH1F, {axisBdtScore}});
@@ -250,7 +281,7 @@ struct HfTaskCorrelationDplusHadrons {
     hCandidates->GetAxis(2)->SetTitle("Charm hadron origin");
 
     // Loading efficiency histograms from CCDB
-    if (applyEfficiency && loadAccXEffFromCCDB) {
+    if ((applyEfficiency != 0) && loadAccXEffFromCCDB) {
       ccdb->setURL(ccdbUrl);
       ccdb->setCaching(true);
       ccdb->setLocalObjectValidityChecking();
@@ -299,24 +330,24 @@ struct HfTaskCorrelationDplusHadrons {
   void processData(DplusHadronPairFullWithMl const& pairEntries, aod::DplusRecoInfo const& candidates)
   {
     for (const auto& candidate : candidates) {
-      float massD = candidate.mD();
-      float ptD = candidate.ptD();
-      float bdtScorePrompt = candidate.mlScorePrompt();
-      float bdtScoreNonPrompt = candidate.mlScoreNonPrompt();
-      float bdtScoreBkg = candidate.mlScoreBkg();
-      int effBinD = o2::analysis::findBin(binsPtEfficiencyD, ptD);
-      float bdtScorePromptOrNonPrompt = isPromptAnalysis ? bdtScorePrompt : bdtScoreNonPrompt;
+      float const massD = candidate.mD();
+      float const ptD = candidate.ptD();
+      float const bdtScorePrompt = candidate.mlScorePrompt();
+      float const bdtScoreNonPrompt = candidate.mlScoreNonPrompt();
+      float const bdtScoreBkg = candidate.mlScoreBkg();
+      int const effBinD = o2::analysis::findBin(binsPtEfficiencyD, ptD);
+      float const bdtScorePromptOrNonPrompt = isPromptAnalysis ? bdtScorePrompt : bdtScoreNonPrompt;
 
       // reject entries outside pT ranges of interest
       if (ptD < binsPtEfficiencyD->front() || ptD > binsPtEfficiencyD->back()) {
         continue;
       }
 
-      if (bdtScorePromptOrNonPrompt < mlScorePromptOrNonPrompt->at(effBinD) || bdtScoreBkg > mlScoreBkg->at(effBinD)) {
+      if (bdtScorePromptOrNonPrompt < mlScorePromptOrNonPromptMin->at(effBinD) || bdtScorePromptOrNonPrompt > mlScorePromptOrNonPromptMax->at(effBinD) || bdtScoreBkg > mlScoreBkg->at(effBinD)) {
         continue;
       }
       double efficiencyWeightD = 1.;
-      if (applyEfficiency) {
+      if (applyEfficiency != 0) {
         efficiencyWeightD = 1. / efficiencyD->at(o2::analysis::findBin(binsPtEfficiencyD, ptD));
         if (loadAccXEffFromCCDB) {
           efficiencyWeightD = 1. / effD->GetBinContent(effD->FindBin(ptD));
@@ -330,35 +361,35 @@ struct HfTaskCorrelationDplusHadrons {
 
     for (const auto& pairEntry : pairEntries) {
       // define variables for widely used quantities
-      float deltaPhi = pairEntry.deltaPhi();
-      float deltaEta = pairEntry.deltaEta();
-      float ptD = pairEntry.ptD();
-      float ptHadron = pairEntry.ptHadron();
-      float bdtScorePrompt = pairEntry.mlScorePrompt();
-      float bdtScoreNonPrompt = pairEntry.mlScoreNonPrompt();
-      float bdtScoreBkg = pairEntry.mlScoreBkg();
-      float trackDcaXY = pairEntry.trackDcaXY();
-      float trackDcaZ = pairEntry.trackDcaZ();
-      int trackTpcCrossedRows = pairEntry.trackTPCNClsCrossedRows();
-      int poolBin = pairEntry.poolBin();
-      double massD = pairEntry.mD();
-      int effBinD = o2::analysis::findBin(binsPtEfficiencyD, ptD);
-      int pTBinD = o2::analysis::findBin(binsPtCorrelations, ptD);
-      float bdtScorePromptOrNonPrompt = isPromptAnalysis ? bdtScorePrompt : bdtScoreNonPrompt;
+      float const deltaPhi = pairEntry.deltaPhi();
+      float const deltaEta = pairEntry.deltaEta();
+      float const ptD = pairEntry.ptD();
+      float const ptHadron = pairEntry.ptHadron();
+      float const bdtScorePrompt = pairEntry.mlScorePrompt();
+      float const bdtScoreNonPrompt = pairEntry.mlScoreNonPrompt();
+      float const bdtScoreBkg = pairEntry.mlScoreBkg();
+      float const trackDcaXY = pairEntry.trackDcaXY();
+      float const trackDcaZ = pairEntry.trackDcaZ();
+      int const trackTpcCrossedRows = pairEntry.trackTPCNClsCrossedRows();
+      int const poolBin = pairEntry.poolBin();
+      double const massD = pairEntry.mD();
+      int const effBinD = o2::analysis::findBin(binsPtEfficiencyD, ptD);
+      int const pTBinD = o2::analysis::findBin(binsPtCorrelations, ptD);
+      float const bdtScorePromptOrNonPrompt = isPromptAnalysis ? bdtScorePrompt : bdtScoreNonPrompt;
 
       // reject entries outside pT ranges of interest
       if (ptD < binsPtEfficiencyD->front() || ptD > binsPtEfficiencyD->back()) {
         continue;
       }
 
-      if (bdtScorePromptOrNonPrompt < mlScorePromptOrNonPrompt->at(effBinD) || bdtScoreBkg > mlScoreBkg->at(effBinD)) {
+      if (bdtScorePromptOrNonPrompt < mlScorePromptOrNonPromptMin->at(effBinD) || bdtScorePromptOrNonPrompt > mlScorePromptOrNonPromptMax->at(effBinD) || bdtScoreBkg > mlScoreBkg->at(effBinD)) {
         continue;
       }
       if (trackDcaXY > dcaXYTrackMax || trackDcaZ > dcaZTrackMax || trackTpcCrossedRows < nTpcCrossedRaws) {
         continue;
       }
       double efficiencyWeight = 1.;
-      if (applyEfficiency) {
+      if (applyEfficiency != 0) {
         efficiencyWeight = 1. / (efficiencyD->at(effBinD) * efficiencyHad->at(o2::analysis::findBin(binsPtEfficiencyHad, ptHadron)));
         if (loadAccXEffFromCCDB) {
           efficiencyWeight = 1. / (effD->GetBinContent(effD->FindBin(ptD)) * mEfficiencyAssociated->GetBinContent(mEfficiencyAssociated->FindBin(ptHadron)));
@@ -401,24 +432,25 @@ struct HfTaskCorrelationDplusHadrons {
                     soa::Join<aod::DplusRecoInfo, aod::DplusGenInfo> const& candidates)
   {
     for (const auto& candidate : candidates) {
-      float massD = candidate.mD();
-      float ptD = candidate.ptD();
-      float bdtScorePrompt = candidate.mlScorePrompt();
-      float bdtScoreNonPrompt = candidate.mlScoreNonPrompt();
-      float bdtScoreBkg = candidate.mlScoreBkg();
-      int effBinD = o2::analysis::findBin(binsPtEfficiencyD, ptD);
-      bool isDplusPrompt = candidate.isPrompt();
-      float bdtScorePromptOrNonPrompt = isPromptAnalysis ? bdtScorePrompt : bdtScoreNonPrompt;
+      float const massD = candidate.mD();
+      float const ptD = candidate.ptD();
+      float const bdtScorePrompt = candidate.mlScorePrompt();
+      float const bdtScoreNonPrompt = candidate.mlScoreNonPrompt();
+      float const bdtScoreBkg = candidate.mlScoreBkg();
+      int const effBinD = o2::analysis::findBin(binsPtEfficiencyD, ptD);
+      bool const isDplusPrompt = candidate.isPrompt();
+      float const bdtScorePromptOrNonPrompt = isPromptAnalysis ? bdtScorePrompt : bdtScoreNonPrompt;
 
       // reject entries outside pT ranges of interest
-      if (ptD < binsPtEfficiencyD->front() || ptD > binsPtEfficiencyD->back())
+      if (ptD < binsPtEfficiencyD->front() || ptD > binsPtEfficiencyD->back()) {
         continue;
+      }
 
-      if (bdtScorePromptOrNonPrompt < mlScorePromptOrNonPrompt->at(effBinD) || bdtScoreBkg > mlScoreBkg->at(effBinD)) {
+      if (bdtScorePromptOrNonPrompt < mlScorePromptOrNonPromptMin->at(effBinD) || bdtScorePromptOrNonPrompt > mlScorePromptOrNonPromptMax->at(effBinD) || bdtScoreBkg > mlScoreBkg->at(effBinD)) {
         continue;
       }
       double efficiencyWeightD = 1.;
-      if (applyEfficiency) {
+      if (applyEfficiency != 0) {
         if (isDplusPrompt) {
           efficiencyWeightD = 1. / efficiencyD->at(effBinD);
           if (loadAccXEffFromCCDB) {
@@ -445,30 +477,31 @@ struct HfTaskCorrelationDplusHadrons {
 
     for (const auto& pairEntry : pairEntries) {
       // define variables for widely used quantities
-      float deltaPhi = pairEntry.deltaPhi();
-      float deltaEta = pairEntry.deltaEta();
-      float ptD = pairEntry.ptD();
-      float ptHadron = pairEntry.ptHadron();
-      float massD = pairEntry.mD();
-      float bdtScorePrompt = pairEntry.mlScorePrompt();
-      float bdtScoreNonPrompt = pairEntry.mlScoreNonPrompt();
-      float bdtScoreBkg = pairEntry.mlScoreBkg();
-      bool isPhysicalPrimary = pairEntry.isPhysicalPrimary();
-      float trackDcaXY = pairEntry.trackDcaXY();
-      float trackDcaZ = pairEntry.trackDcaZ();
-      int trackTpcCrossedRows = pairEntry.trackTPCNClsCrossedRows();
-      bool isDplusPrompt = pairEntry.isPrompt();
-      int originHadron = pairEntry.trackOrigin();
-      int poolBin = pairEntry.poolBin();
-      int effBinD = o2::analysis::findBin(binsPtEfficiencyD, ptD);
-      int pTBinD = o2::analysis::findBin(binsPtCorrelations, ptD);
-      float bdtScorePromptOrNonPrompt = isPromptAnalysis ? bdtScorePrompt : bdtScoreNonPrompt;
+      float const deltaPhi = pairEntry.deltaPhi();
+      float const deltaEta = pairEntry.deltaEta();
+      float const ptD = pairEntry.ptD();
+      float const ptHadron = pairEntry.ptHadron();
+      float const massD = pairEntry.mD();
+      float const bdtScorePrompt = pairEntry.mlScorePrompt();
+      float const bdtScoreNonPrompt = pairEntry.mlScoreNonPrompt();
+      float const bdtScoreBkg = pairEntry.mlScoreBkg();
+      bool const isPhysicalPrimary = pairEntry.isPhysicalPrimary();
+      float const trackDcaXY = pairEntry.trackDcaXY();
+      float const trackDcaZ = pairEntry.trackDcaZ();
+      int const trackTpcCrossedRows = pairEntry.trackTPCNClsCrossedRows();
+      bool const isDplusPrompt = pairEntry.isPrompt();
+      int const originHadron = pairEntry.trackOrigin();
+      int const poolBin = pairEntry.poolBin();
+      int const effBinD = o2::analysis::findBin(binsPtEfficiencyD, ptD);
+      int const pTBinD = o2::analysis::findBin(binsPtCorrelations, ptD);
+      float const bdtScorePromptOrNonPrompt = isPromptAnalysis ? bdtScorePrompt : bdtScoreNonPrompt;
 
       // reject entries outside pT ranges of interest
-      if (ptD < binsPtEfficiencyD->front() || ptD > binsPtEfficiencyD->back())
+      if (ptD < binsPtEfficiencyD->front() || ptD > binsPtEfficiencyD->back()) {
         continue;
+      }
 
-      if (bdtScorePromptOrNonPrompt < mlScorePromptOrNonPrompt->at(effBinD) || bdtScoreBkg > mlScoreBkg->at(effBinD)) {
+      if (bdtScorePromptOrNonPrompt < mlScorePromptOrNonPromptMin->at(effBinD) || bdtScorePromptOrNonPrompt > mlScorePromptOrNonPromptMax->at(effBinD) || bdtScoreBkg > mlScoreBkg->at(effBinD)) {
         continue;
       }
       if (trackDcaXY > dcaXYTrackMax || trackDcaZ > dcaZTrackMax || trackTpcCrossedRows < nTpcCrossedRaws) {
@@ -476,7 +509,7 @@ struct HfTaskCorrelationDplusHadrons {
       }
       double efficiencyWeight = 1.;
 
-      if (applyEfficiency) {
+      if (applyEfficiency != 0) {
         if (isDplusPrompt) {
           efficiencyWeight = 1. / (efficiencyD->at(effBinD) * efficiencyHad->at(o2::analysis::findBin(binsPtEfficiencyHad, ptHadron)));
           if (loadAccXEffFromCCDB) {
@@ -543,13 +576,13 @@ struct HfTaskCorrelationDplusHadrons {
   {
     for (const auto& pairEntry : pairEntries) {
       // define variables for widely used quantities
-      float deltaPhi = pairEntry.deltaPhi();
-      float deltaEta = pairEntry.deltaEta();
-      float ptD = pairEntry.ptD();
-      float ptHadron = pairEntry.ptHadron();
-      int poolBin = pairEntry.poolBin();
-      int originHadron = pairEntry.trackOrigin();
-      bool isDplusPrompt = pairEntry.isPrompt();
+      float const deltaPhi = pairEntry.deltaPhi();
+      float const deltaEta = pairEntry.deltaEta();
+      float const ptD = pairEntry.ptD();
+      float const ptHadron = pairEntry.ptHadron();
+      int const poolBin = pairEntry.poolBin();
+      int const originHadron = pairEntry.trackOrigin();
+      bool const isDplusPrompt = pairEntry.isPrompt();
 
       registry.fill(HIST("hCorrel2DVsPtMcGen"), deltaPhi, deltaEta, ptD, ptHadron, poolBin);
       registry.fill(HIST("hDeltaEtaPtIntMcGen"), deltaEta);
@@ -586,7 +619,7 @@ struct HfTaskCorrelationDplusHadrons {
         auto mcCollision = mcParticle.template mcCollision_as<soa::Join<aod::McCollisions, aod::MultsExtraMC>>();
         multiplicity = mcCollision.multMCFT0A() + mcCollision.multMCFT0C(); // multFT0M = multFt0A + multFT0C
         hCandidates->Fill(kCandidateStepMcGenAll, mcParticle.pt(), multiplicity, mcParticle.originMcGen());
-        if (std::abs(mcParticle.flagMcMatchGen()) == 1 << aod::hf_cand_3prong::DecayType::DplusToPiKPi) {
+        if (std::abs(mcParticle.flagMcMatchGen()) == hf_decay::hf_cand_3prong::DecayChannelMain::DplusToPiKPi) {
           hCandidates->Fill(kCandidateStepMcGenDplusToPiKPi, mcParticle.pt(), multiplicity, mcParticle.originMcGen());
           auto yDplus = RecoDecay::y(mcParticle.pVector(), o2::constants::physics::MassDPlus);
           if (std::abs(yDplus) <= yCandGenMax) {
@@ -625,7 +658,7 @@ struct HfTaskCorrelationDplusHadrons {
       for (unsigned int iclass = 0; iclass < classMl->size(); iclass++) {
         outputMl[iclass] = candidate.mlProbDplusToPiKPi()[classMl->at(iclass)];
       }
-      if (outputMl[0] > mlScoreBkg->at(o2::analysis::findBin(binsPtEfficiencyD, candidate.pt())) || outputMl[idxBdtScore] < mlScorePromptOrNonPrompt->at(o2::analysis::findBin(binsPtEfficiencyD, candidate.pt()))) {
+      if (outputMl[0] > mlScoreBkg->at(o2::analysis::findBin(binsPtEfficiencyD, candidate.pt())) || outputMl[idxBdtScore] < mlScorePromptOrNonPromptMin->at(o2::analysis::findBin(binsPtEfficiencyD, candidate.pt())) || outputMl[idxBdtScore] > mlScorePromptOrNonPromptMax->at(o2::analysis::findBin(binsPtEfficiencyD, candidate.pt()))) {
         continue;
       }
       auto collision = candidate.template collision_as<soa::Join<aod::Collisions, aod::FT0Mults, aod::EvSels>>();
@@ -633,7 +666,7 @@ struct HfTaskCorrelationDplusHadrons {
         continue;
       }
       multiplicity = collision.multFT0M();
-      if (std::abs(candidate.flagMcMatchRec()) == 1 << aod::hf_cand_3prong::DecayType::DplusToPiKPi) {
+      if (std::abs(candidate.flagMcMatchRec()) == hf_decay::hf_cand_3prong::DecayChannelMain::DplusToPiKPi) {
         hCandidates->Fill(kCandidateStepMcReco, candidate.pt(), multiplicity, candidate.originMcRec());
         if (std::abs(hfHelper.yDplus(candidate)) <= yCandMax) {
           hCandidates->Fill(kCandidateStepMcRecoInAcceptance, candidate.pt(), multiplicity, candidate.originMcRec());

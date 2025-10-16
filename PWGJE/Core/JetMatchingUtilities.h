@@ -20,27 +20,25 @@
 #ifndef PWGJE_CORE_JETMATCHINGUTILITIES_H_
 #define PWGJE_CORE_JETMATCHINGUTILITIES_H_
 
-#include <array>
-#include <vector>
-#include <string>
-#include <optional>
-#include <tuple>
-#include <algorithm>
-
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoA.h"
-#include "Framework/O2DatabasePDGPlugin.h"
-
-#include "Framework/Logger.h"
-#include "Common/Core/TrackSelection.h"
-#include "Common/Core/TrackSelectionDefaults.h"
-#include "Common/DataModel/EventSelection.h"
-#include "Common/DataModel/TrackSelectionTables.h"
-#include "PWGJE/DataModel/EMCALClusters.h"
-#include "PWGJE/DataModel/Jet.h"
 #include "PWGJE/Core/JetCandidateUtilities.h"
 #include "PWGJE/Core/JetFindingUtilities.h"
+#include "PWGJE/DataModel/JetReducedData.h"
+
+#include <Framework/Logger.h>
+
+#include <TKDTree.h>
+
+#include <RtypesCore.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <numeric>
+#include <ostream>
+#include <stdexcept>
+#include <tuple>
+#include <vector>
+
+#include <math.h>
 
 namespace jetmatchingutilities
 {
@@ -125,13 +123,13 @@ std::tuple<std::vector<int>, std::vector<int>> MatchJetsGeometricallyImpl(
   const std::vector<T>& jetsBaseEta,
   std::vector<T> jetsBasePhiForMatching,
   std::vector<T> jetsBaseEtaForMatching,
-  const std::vector<std::size_t> jetMapBaseToJetIndex,
+  const std::vector<std::size_t>& jetMapBaseToJetIndex,
   const std::vector<T>& jetsTagPhi,
   const std::vector<T>& jetsTagEta,
   std::vector<T> jetsTagPhiForMatching,
   std::vector<T> jetsTagEtaForMatching,
-  const std::vector<std::size_t> jetMapTagToJetIndex,
-  double maxMatchingDistance)
+  const std::vector<std::size_t>& jetMapTagToJetIndex,
+  const double maxMatchingDistance)
 {
   // Validation
   // If no jets in either collection, then return immediately.
@@ -546,8 +544,10 @@ void MatchPt(T const& jetsBasePerCollision, U const& jetsTagPerCollision, std::v
       auto jetTagClusters = getConstituents(jetTag, clustersTag);
       auto jetTagCandidates = getConstituents(jetTag, candidatesTag);
 
-      ptSumBase = getPtSum < jetfindingutilities::isEMCALClusterTable<N>() || jetfindingutilities::isEMCALClusterTable<Q>(), (jetcandidateutilities::isCandidateTable<M>() || jetcandidateutilities::isCandidateMcTable<M>()) && (jetcandidateutilities::isCandidateTable<P>() || jetcandidateutilities::isCandidateMcTable<P>()), jetsBaseIsMc, jetsTagIsMc > (jetBaseTracks, jetBaseCandidates, jetBaseClusters, jetTagTracks, jetTagCandidates, jetTagClusters, tracksBase, tracksTag);
-      ptSumTag = getPtSum < jetfindingutilities::isEMCALClusterTable<N>() || jetfindingutilities::isEMCALClusterTable<Q>(), (jetcandidateutilities::isCandidateTable<M>() || jetcandidateutilities::isCandidateMcTable<M>()) && (jetcandidateutilities::isCandidateTable<P>() || jetcandidateutilities::isCandidateMcTable<P>()), jetsTagIsMc, jetsBaseIsMc > (jetTagTracks, jetTagCandidates, jetTagClusters, jetBaseTracks, jetBaseCandidates, jetBaseClusters, tracksTag, tracksBase);
+      constexpr bool IsEMCAL{jetfindingutilities::isEMCALClusterTable<N>() || jetfindingutilities::isEMCALClusterTable<Q>()};
+      constexpr bool IsCandidate{(jetcandidateutilities::isCandidateTable<M>() || jetcandidateutilities::isCandidateMcTable<M>()) && (jetcandidateutilities::isCandidateTable<P>() || jetcandidateutilities::isCandidateMcTable<P>())};
+      ptSumBase = getPtSum<IsEMCAL, IsCandidate, jetsBaseIsMc, jetsTagIsMc>(jetBaseTracks, jetBaseCandidates, jetBaseClusters, jetTagTracks, jetTagCandidates, jetTagClusters, tracksBase, tracksTag);
+      ptSumTag = getPtSum<IsEMCAL, IsCandidate, jetsTagIsMc, jetsBaseIsMc>(jetTagTracks, jetTagCandidates, jetTagClusters, jetBaseTracks, jetBaseCandidates, jetBaseClusters, tracksTag, tracksBase);
       if (ptSumBase > jetBase.pt() * minPtFraction) {
         baseToTagMatchingPt[jetBase.globalIndex()].push_back(jetTag.globalIndex());
       }
@@ -742,5 +742,5 @@ void doPairMatching(T const& pairsBase, U const& pairsTag, std::vector<std::vect
   }
 }
 
-};     // namespace jetmatchingutilities
+}; // namespace jetmatchingutilities
 #endif // PWGJE_CORE_JETMATCHINGUTILITIES_H_

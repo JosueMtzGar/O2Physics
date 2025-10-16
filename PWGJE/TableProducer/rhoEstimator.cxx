@@ -13,20 +13,30 @@
 //
 /// \author Nima Zardoshti <nima.zardoshti@cern.ch>
 
-#include <vector>
-#include <string>
-
-#include "Framework/AnalysisTask.h"
-#include "Framework/AnalysisDataModel.h"
-#include "Framework/ASoA.h"
-#include "Framework/O2DatabasePDGPlugin.h"
-
-#include "PWGJE/Core/FastJetUtilities.h"
-#include "PWGJE/Core/JetFindingUtilities.h"
-#include "PWGJE/Core/JetDerivedDataUtilities.h"
-#include "PWGJE/DataModel/Jet.h"
 #include "PWGJE/Core/JetBkgSubUtils.h"
-#include "Framework/runDataProcessing.h"
+#include "PWGJE/Core/JetDerivedDataUtilities.h"
+#include "PWGJE/Core/JetFindingUtilities.h"
+#include "PWGJE/DataModel/Jet.h"
+#include "PWGJE/DataModel/JetReducedData.h"
+#include "PWGJE/DataModel/JetSubtraction.h"
+
+#include "Framework/ASoA.h"
+#include "Framework/AnalysisTask.h"
+#include "Framework/O2DatabasePDGPlugin.h"
+#include <Framework/AnalysisHelpers.h>
+#include <Framework/Configurable.h>
+#include <Framework/InitContext.h>
+#include <Framework/Logger.h>
+#include <Framework/runDataProcessing.h>
+
+#include <fastjet/JetDefinition.hh>
+#include <fastjet/PseudoJet.hh>
+
+#include <string>
+#include <type_traits>
+#include <vector>
+
+#include <math.h>
 
 using namespace o2;
 using namespace o2::framework;
@@ -39,10 +49,18 @@ struct RhoEstimatorTask {
   Produces<aod::BkgD0McRhos> rhoD0McTable;
   Produces<aod::BkgDplusRhos> rhoDplusTable;
   Produces<aod::BkgDplusMcRhos> rhoDplusMcTable;
+  Produces<aod::BkgDsRhos> rhoDsTable;
+  Produces<aod::BkgDsMcRhos> rhoDsMcTable;
+  Produces<aod::BkgDstarRhos> rhoDstarTable;
+  Produces<aod::BkgDstarMcRhos> rhoDstarMcTable;
   Produces<aod::BkgLcRhos> rhoLcTable;
   Produces<aod::BkgLcMcRhos> rhoLcMcTable;
+  Produces<aod::BkgB0Rhos> rhoB0Table;
+  Produces<aod::BkgB0McRhos> rhoB0McTable;
   Produces<aod::BkgBplusRhos> rhoBplusTable;
   Produces<aod::BkgBplusMcRhos> rhoBplusMcTable;
+  Produces<aod::BkgXicToXiPiPiRhos> rhoXicToXiPiPiTable;
+  Produces<aod::BkgXicToXiPiPiMcRhos> rhoXicToXiPiPiMcTable;
   Produces<aod::BkgDielectronRhos> rhoDielectronTable;
   Produces<aod::BkgDielectronMcRhos> rhoDielectronMcTable;
 
@@ -56,7 +74,9 @@ struct RhoEstimatorTask {
     Configurable<float> trackEtaMax{"trackEtaMax", 0.9, "maximum track eta"};
     Configurable<float> trackPhiMin{"trackPhiMin", -99.0, "minimum track phi"};
     Configurable<float> trackPhiMax{"trackPhiMax", 99.0, "maximum track phi"};
-    Configurable<double> trackingEfficiency{"trackingEfficiency", 1.0, "tracking efficiency applied to jet finding"};
+    Configurable<bool> applyTrackingEfficiency{"applyTrackingEfficiency", {false}, "configurable to decide whether to apply artificial tracking efficiency (discarding tracks) in the collision analysed by this task"};
+    Configurable<std::vector<double>> trackingEfficiencyPtBinning{"trackingEfficiencyPtBinning", {0., 10, 999.}, "pt binning of tracking efficiency array if applyTrackingEfficiency is true"};
+    Configurable<std::vector<double>> trackingEfficiency{"trackingEfficiency", {1.0, 1.0}, "tracking efficiency array applied if applyTrackingEfficiency is true"};
     Configurable<std::string> trackSelections{"trackSelections", "globalTracks", "set track selections"};
 
     Configurable<std::string> particleSelections{"particleSelections", "PhysicalPrimary", "set particle selections"};
@@ -116,6 +136,15 @@ struct RhoEstimatorTask {
     bkgSub.setPhiMinMax(bkgPhiMin_, bkgPhiMax_);
     eventSelectionBits = jetderiveddatautilities::initialiseEventSelectionBits(static_cast<std::string>(config.eventSelections));
     triggerMaskBits = jetderiveddatautilities::initialiseTriggerMaskBits(config.triggerMasks);
+
+    if (config.applyTrackingEfficiency) {
+      if (config.trackingEfficiencyPtBinning->size() < 2) {
+        LOGP(fatal, "rhoEstimator workflow: trackingEfficiencyPtBinning configurable should have at least two bin edges");
+      }
+      if (config.trackingEfficiency->size() + 1 != config.trackingEfficiencyPtBinning->size()) {
+        LOGP(fatal, "rhoEstimator workflow: trackingEfficiency configurable should have exactly one less entry than the number of bin edges set in trackingEfficiencyPtBinning configurable");
+      }
+    }
   }
 
   Filter trackCuts = (aod::jtrack::pt >= config.trackPtMin && aod::jtrack::pt < config.trackPtMax && aod::jtrack::eta > config.trackEtaMin && aod::jtrack::eta < config.trackEtaMax && aod::jtrack::phi >= config.trackPhiMin && aod::jtrack::phi <= config.trackPhiMax);
@@ -178,7 +207,7 @@ struct RhoEstimatorTask {
 
   void processChargedCollisions(aod::JetCollision const& collision, soa::Filtered<aod::JetTracks> const& tracks)
   {
-    if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centrality() < config.centralityMin || collision.centrality() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
+    if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centFT0M() < config.centralityMin || collision.centFT0M() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
       rhoChargedTable(0.0, 0.0);
       return;
     }
@@ -191,7 +220,7 @@ struct RhoEstimatorTask {
       return;
     }
     inputParticles.clear();
-    jetfindingutilities::analyseTracks<soa::Filtered<aod::JetTracks>, soa::Filtered<aod::JetTracks>::iterator>(inputParticles, tracks, trackSelection, config.trackingEfficiency);
+    jetfindingutilities::analyseTracks<soa::Filtered<aod::JetTracks>, soa::Filtered<aod::JetTracks>::iterator>(inputParticles, tracks, trackSelection, config.applyTrackingEfficiency, config.trackingEfficiency, config.trackingEfficiencyPtBinning);
     auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
     rhoChargedTable(rho, rhoM);
   }
@@ -213,12 +242,12 @@ struct RhoEstimatorTask {
   void processD0Collisions(aod::JetCollision const& collision, soa::Filtered<aod::JetTracks> const& tracks, aod::CandidatesD0Data const& candidates)
   {
     for (auto& candidate : candidates) {
-      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centrality() < config.centralityMin || collision.centrality() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
+      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centFT0M() < config.centralityMin || collision.centFT0M() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
         rhoD0Table(0.0, 0.0);
         continue;
       }
       inputParticles.clear();
-      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.trackingEfficiency, &candidate);
+      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.applyTrackingEfficiency, config.trackingEfficiency, config.trackingEfficiencyPtBinning, &candidate);
 
       auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
       rhoD0Table(rho, rhoM);
@@ -241,12 +270,12 @@ struct RhoEstimatorTask {
   void processDplusCollisions(aod::JetCollision const& collision, soa::Filtered<aod::JetTracks> const& tracks, aod::CandidatesDplusData const& candidates)
   {
     for (auto& candidate : candidates) {
-      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centrality() < config.centralityMin || collision.centrality() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
+      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centFT0M() < config.centralityMin || collision.centFT0M() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
         rhoDplusTable(0.0, 0.0);
         continue;
       }
       inputParticles.clear();
-      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.trackingEfficiency, &candidate);
+      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.applyTrackingEfficiency, config.trackingEfficiency, config.trackingEfficiencyPtBinning, &candidate);
 
       auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
       rhoDplusTable(rho, rhoM);
@@ -266,15 +295,71 @@ struct RhoEstimatorTask {
   }
   PROCESS_SWITCH(RhoEstimatorTask, processDplusMcCollisions, "Fill rho tables for collisions with Dplus MCP candidates", false);
 
+  void processDsCollisions(aod::JetCollision const& collision, soa::Filtered<aod::JetTracks> const& tracks, aod::CandidatesDsData const& candidates)
+  {
+    for (auto& candidate : candidates) {
+      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centFT0M() < config.centralityMin || collision.centFT0M() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
+        rhoDsTable(0.0, 0.0);
+        continue;
+      }
+      inputParticles.clear();
+      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.applyTrackingEfficiency, config.trackingEfficiency, config.trackingEfficiencyPtBinning, &candidate);
+
+      auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
+      rhoDsTable(rho, rhoM);
+    }
+  }
+  PROCESS_SWITCH(RhoEstimatorTask, processDsCollisions, "Fill rho tables for collisions with Ds candidates", false);
+
+  void processDsMcCollisions(aod::JetMcCollision const&, soa::Filtered<aod::JetParticles> const& particles, aod::CandidatesDsMCP const& candidates)
+  {
+    for (auto& candidate : candidates) {
+      inputParticles.clear();
+      jetfindingutilities::analyseParticles<true>(inputParticles, particleSelection, 1, particles, pdgDatabase, &candidate);
+
+      auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
+      rhoDsMcTable(rho, rhoM);
+    }
+  }
+  PROCESS_SWITCH(RhoEstimatorTask, processDsMcCollisions, "Fill rho tables for collisions with Ds MCP candidates", false);
+
+  void processDstarCollisions(aod::JetCollision const& collision, soa::Filtered<aod::JetTracks> const& tracks, aod::CandidatesDstarData const& candidates)
+  {
+    for (auto& candidate : candidates) {
+      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centFT0M() < config.centralityMin || collision.centFT0M() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
+        rhoDstarTable(0.0, 0.0);
+        continue;
+      }
+      inputParticles.clear();
+      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.applyTrackingEfficiency, config.trackingEfficiency, config.trackingEfficiencyPtBinning, &candidate);
+
+      auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
+      rhoDstarTable(rho, rhoM);
+    }
+  }
+  PROCESS_SWITCH(RhoEstimatorTask, processDstarCollisions, "Fill rho tables for collisions with Dstar candidates", false);
+
+  void processDstarMcCollisions(aod::JetMcCollision const&, soa::Filtered<aod::JetParticles> const& particles, aod::CandidatesDstarMCP const& candidates)
+  {
+    for (auto& candidate : candidates) {
+      inputParticles.clear();
+      jetfindingutilities::analyseParticles<true>(inputParticles, particleSelection, 1, particles, pdgDatabase, &candidate);
+
+      auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
+      rhoDstarMcTable(rho, rhoM);
+    }
+  }
+  PROCESS_SWITCH(RhoEstimatorTask, processDstarMcCollisions, "Fill rho tables for collisions with Dstar MCP candidates", false);
+
   void processLcCollisions(aod::JetCollision const& collision, soa::Filtered<aod::JetTracks> const& tracks, aod::CandidatesLcData const& candidates)
   {
     for (auto& candidate : candidates) {
-      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centrality() < config.centralityMin || collision.centrality() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
+      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centFT0M() < config.centralityMin || collision.centFT0M() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
         rhoLcTable(0.0, 0.0);
         continue;
       }
       inputParticles.clear();
-      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.trackingEfficiency, &candidate);
+      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.applyTrackingEfficiency, config.trackingEfficiency, config.trackingEfficiencyPtBinning, &candidate);
 
       auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
       rhoLcTable(rho, rhoM);
@@ -294,48 +379,104 @@ struct RhoEstimatorTask {
   }
   PROCESS_SWITCH(RhoEstimatorTask, processLcMcCollisions, "Fill rho tables for collisions with Lc MCP candidates", false);
 
+  void processB0Collisions(aod::JetCollision const& collision, soa::Filtered<aod::JetTracks> const& tracks, aod::CandidatesB0Data const& candidates)
+  {
+    for (auto& candidate : candidates) {
+      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centFT0M() < config.centralityMin || collision.centFT0M() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
+        rhoB0Table(0.0, 0.0);
+        continue;
+      }
+      inputParticles.clear();
+      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.applyTrackingEfficiency, config.trackingEfficiency, config.trackingEfficiencyPtBinning, &candidate);
+
+      auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
+      rhoB0Table(rho, rhoM);
+    }
+  }
+  PROCESS_SWITCH(RhoEstimatorTask, processB0Collisions, "Fill rho tables for collisions with B0 candidates", false);
+
+  void processB0McCollisions(aod::JetMcCollision const&, soa::Filtered<aod::JetParticles> const& particles, aod::CandidatesB0MCP const& candidates)
+  {
+    for (auto& candidate : candidates) {
+      inputParticles.clear();
+      jetfindingutilities::analyseParticles<true>(inputParticles, particleSelection, 1, particles, pdgDatabase, &candidate);
+
+      auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
+      rhoB0McTable(rho, rhoM);
+    }
+  }
+  PROCESS_SWITCH(RhoEstimatorTask, processB0McCollisions, "Fill rho tables for collisions with B0 MCP candidates", false);
+
   void processBplusCollisions(aod::JetCollision const& collision, soa::Filtered<aod::JetTracks> const& tracks, aod::CandidatesBplusData const& candidates)
   {
     for (auto& candidate : candidates) {
-      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centrality() < config.centralityMin || collision.centrality() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
+      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centFT0M() < config.centralityMin || collision.centFT0M() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
         rhoBplusTable(0.0, 0.0);
         continue;
       }
       inputParticles.clear();
-      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.trackingEfficiency, &candidate);
+      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.applyTrackingEfficiency, config.trackingEfficiency, config.trackingEfficiencyPtBinning, &candidate);
 
       auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
       rhoBplusTable(rho, rhoM);
     }
   }
-    PROCESS_SWITCH(RhoEstimatorTask, processBplusCollisions, "Fill rho tables for collisions with Bplus candidates", false);
+  PROCESS_SWITCH(RhoEstimatorTask, processBplusCollisions, "Fill rho tables for collisions with Bplus candidates", false);
 
-    void processBplusMcCollisions(aod::JetMcCollision const&, soa::Filtered<aod::JetParticles> const& particles, aod::CandidatesBplusMCP const& candidates)
-    {
-      for (auto& candidate : candidates) {
-        inputParticles.clear();
-        jetfindingutilities::analyseParticles<true>(inputParticles, particleSelection, 1, particles, pdgDatabase, &candidate);
+  void processBplusMcCollisions(aod::JetMcCollision const&, soa::Filtered<aod::JetParticles> const& particles, aod::CandidatesBplusMCP const& candidates)
+  {
+    for (auto& candidate : candidates) {
+      inputParticles.clear();
+      jetfindingutilities::analyseParticles<true>(inputParticles, particleSelection, 1, particles, pdgDatabase, &candidate);
 
-        auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
-        rhoBplusMcTable(rho, rhoM);
-      }
+      auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
+      rhoBplusMcTable(rho, rhoM);
     }
-    PROCESS_SWITCH(RhoEstimatorTask, processBplusMcCollisions, "Fill rho tables for collisions with Bplus MCP candidates", false);
+  }
+  PROCESS_SWITCH(RhoEstimatorTask, processBplusMcCollisions, "Fill rho tables for collisions with Bplus MCP candidates", false);
 
-    void processDielectronCollisions(aod::JetCollision const& collision, soa::Filtered<aod::JetTracks> const& tracks, aod::CandidatesDielectronData const& candidates)
-    {
-      for (auto& candidate : candidates) {
-        if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centrality() < config.centralityMin || collision.centrality() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
-          rhoDielectronTable(0.0, 0.0);
-          continue;
-        }
-        inputParticles.clear();
-        jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.trackingEfficiency, &candidate);
-
-        auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
-        rhoDielectronTable(rho, rhoM);
+  void processXicToXiPiPiCollisions(aod::JetCollision const& collision, soa::Filtered<aod::JetTracks> const& tracks, aod::CandidatesXicToXiPiPiData const& candidates)
+  {
+    for (auto& candidate : candidates) {
+      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centFT0M() < config.centralityMin || collision.centFT0M() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
+        rhoXicToXiPiPiTable(0.0, 0.0);
+        continue;
       }
+      inputParticles.clear();
+      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.applyTrackingEfficiency, config.trackingEfficiency, config.trackingEfficiencyPtBinning, &candidate);
+
+      auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
+      rhoXicToXiPiPiTable(rho, rhoM);
     }
+  }
+  PROCESS_SWITCH(RhoEstimatorTask, processXicToXiPiPiCollisions, "Fill rho tables for collisions with XicToXiPiPi candidates", false);
+
+  void processXicToXiPiPiMcCollisions(aod::JetMcCollision const&, soa::Filtered<aod::JetParticles> const& particles, aod::CandidatesXicToXiPiPiMCP const& candidates)
+  {
+    for (auto& candidate : candidates) {
+      inputParticles.clear();
+      jetfindingutilities::analyseParticles<true>(inputParticles, particleSelection, 1, particles, pdgDatabase, &candidate);
+
+      auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
+      rhoXicToXiPiPiMcTable(rho, rhoM);
+    }
+  }
+  PROCESS_SWITCH(RhoEstimatorTask, processXicToXiPiPiMcCollisions, "Fill rho tables for collisions with XicToXiPiPi MCP candidates", false);
+
+  void processDielectronCollisions(aod::JetCollision const& collision, soa::Filtered<aod::JetTracks> const& tracks, aod::CandidatesDielectronData const& candidates)
+  {
+    for (auto& candidate : candidates) {
+      if (!jetderiveddatautilities::selectCollision(collision, eventSelectionBits) || collision.centFT0M() < config.centralityMin || collision.centFT0M() >= config.centralityMax || collision.trackOccupancyInTimeRange() > config.trackOccupancyInTimeRangeMax || std::abs(collision.posZ()) > config.vertexZCut) {
+        rhoDielectronTable(0.0, 0.0);
+        continue;
+      }
+      inputParticles.clear();
+      jetfindingutilities::analyseTracks(inputParticles, tracks, trackSelection, config.applyTrackingEfficiency, config.trackingEfficiency, config.trackingEfficiencyPtBinning, &candidate);
+
+      auto [rho, rhoM] = bkgSub.estimateRhoAreaMedian(inputParticles, config.doSparse);
+      rhoDielectronTable(rho, rhoM);
+    }
+  }
   PROCESS_SWITCH(RhoEstimatorTask, processDielectronCollisions, "Fill rho tables for collisions with Dielectron candidates", false);
 
   void processDielectronMcCollisions(aod::JetMcCollision const&, soa::Filtered<aod::JetParticles> const& particles, aod::CandidatesDielectronMCP const& candidates)
