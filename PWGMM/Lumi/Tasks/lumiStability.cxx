@@ -635,8 +635,8 @@ struct LumiStabilityTask {
               auto sideCPast = fddPast.chargeC();
               std::vector<int> channelAPast;
               std::vector<int> channelCPast;
-              int maxNChanels = 8
-              for (auto i = 0; i < maxNChanels; i++) {
+              int maxNChanels = 8 for (auto i = 0; i < maxNChanels; i++)
+              {
                 if (sideAPast[i] > 0) {
                   channelAPast.push_back(i);
                 }
