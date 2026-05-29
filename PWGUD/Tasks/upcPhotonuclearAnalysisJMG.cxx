@@ -711,10 +711,10 @@ struct UpcPhotonuclearAnalysisJMG {
           histos.fill(HIST("Tracks/SGsideA/hTrackPhi"), phiVal);
           histos.fill(HIST("Tracks/SGsideA/hTrackEta"), etaVal);
           histos.fill(HIST("Tracks/SGsideA/hTrackTPCSignnalP"), pTotal, track.tpcSignal());
-          if(TMath::Sqrt(TMath::Power(track.tpcNSigmaPi(),2) + TMath::Power(track.tofNSigmaPi(),2)) < 3 && TMath::Sqrt(TMath::Power(tpcNSigmaKa(),2) + TMath::Power(tofNSigmaKa(),2)) > 3){
+          if (TMath::Sqrt(TMath::Power(track.tpcNSigmaPi(), 2) + TMath::Power(track.tofNSigmaPi(), 2)) < 3 && TMath::Sqrt(TMath::Power(tpcNSigmaKa(), 2) + TMath::Power(tofNSigmaKa(), 2)) > 3) {
             histos.fill(HIST("Tracks/SGsideA/hTrackTPCSignnalPPiones"), pTotal, track.tpcSignal());
           }
-          if(TMath::Sqrt(TMath::Power(track.tpcNSigmaKa(),2) + TMath::Power(track.tofNSigmaKa(),2)) < 3 && TMath::Sqrt(TMath::Power(tpcNSigmaPi(),2) + TMath::Power(tofNSigmaPi(),2)) > 3){
+          if (TMath::Sqrt(TMath::Power(track.tpcNSigmaKa(), 2) + TMath::Power(track.tofNSigmaKa(), 2)) < 3 && TMath::Sqrt(TMath::Power(tpcNSigmaPi(), 2) + TMath::Power(tofNSigmaPi(), 2)) > 3) {
             histos.fill(HIST("Tracks/SGsideA/hTrackTPCSignnalPKaones"), pTotal, track.tpcSignal());
           }
           histos.fill(HIST("Tracks/SGsideA/hTrackTOFSignnalP"), pTotal, track.tofSignal());
@@ -785,10 +785,10 @@ struct UpcPhotonuclearAnalysisJMG {
           histos.fill(HIST("Tracks/SGsideC/hTrackPhi"), phiVal);
           histos.fill(HIST("Tracks/SGsideC/hTrackEta"), etaVal);
           histos.fill(HIST("Tracks/SGsideC/hTrackTPCSignnalP"), pTotal, track.tpcSignal());
-          if(TMath::Sqrt(TMath::Power(track.tpcNSigmaPi(),2) + TMath::Power(track.tofNSigmaPi(),2)) < 3 && TMath::Sqrt(TMath::Power(tpcNSigmaKa(),2) + TMath::Power(tofNSigmaKa(),2)) > 3){
+          if (TMath::Sqrt(TMath::Power(track.tpcNSigmaPi(), 2) + TMath::Power(track.tofNSigmaPi(), 2)) < 3 && TMath::Sqrt(TMath::Power(tpcNSigmaKa(), 2) + TMath::Power(tofNSigmaKa(), 2)) > 3) {
             histos.fill(HIST("Tracks/SGsideC/hTrackTPCSignnalPPiones"), pTotal, track.tpcSignal());
           }
-          if(TMath::Sqrt(TMath::Power(track.tpcNSigmaKa(),2) + TMath::Power(track.tofNSigmaKa(),2)) < 3 && TMath::Sqrt(TMath::Power(tpcNSigmaPi(),2) + TMath::Power(tofNSigmaPi(),2)) > 3){
+          if (TMath::Sqrt(TMath::Power(track.tpcNSigmaKa(), 2) + TMath::Power(track.tofNSigmaKa(), 2)) < 3 && TMath::Sqrt(TMath::Power(tpcNSigmaPi(), 2) + TMath::Power(tofNSigmaPi(), 2)) > 3) {
             histos.fill(HIST("Tracks/SGsideC/hTrackTPCSignnalPKaones"), pTotal, track.tpcSignal());
           }
           histos.fill(HIST("Tracks/SGsideC/hTrackTOFSignnalP"), pTotal, track.tofSignal());
