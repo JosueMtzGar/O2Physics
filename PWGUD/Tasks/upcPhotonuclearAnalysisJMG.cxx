@@ -1127,8 +1127,8 @@ struct UpcPhotonuclearAnalysisJMG {
     //   return;
     // }
     fillCollisionUD(same, multiplicity)
-    // LOGF(debug, "Filling same events");
-    histos.fill(HIST("eventcount"), -2);
+      // LOGF(debug, "Filling same events");
+      histos.fill(HIST("eventcount"), -2);
     if (minMultiplicity <= multiplicity && multiplicity <= range1Max) {
       histos.fill(HIST("eventcount"), 1);
     } else if (range2Min <= multiplicity && multiplicity <= range2Max) {
