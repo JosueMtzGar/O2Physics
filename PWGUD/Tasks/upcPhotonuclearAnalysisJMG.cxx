@@ -879,8 +879,8 @@ struct UpcPhotonuclearAnalysisJMG {
          vTrackTOFNSigmaProSideC,
          vTrackTOFBetaSideC,
          vTrackTOFBetaErrorSideC,
-         nTracksChargedSideA,
-         multiplicitySideA,
+         nTracksChargedSideC,
+         multiplicitySideC,
          nTracksChargedSideC,
          multiplicitySideC);
     // nTracksChargedSideA = nTracksChargedSideC = multiplicitySideA = multiplicitySideC = 0;
